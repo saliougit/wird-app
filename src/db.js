@@ -15,6 +15,69 @@ db.version(1).stores({
   settings: 'key',
 })
 
+// Version 2: Add daily kamils and khassida batches
+db.version(2).stores({
+  kamils: '++id, type, startDate, endDate, name, createdAt',
+  readings: '++id, kamilId, juzzNumber, readDate',
+  khassidas: '++id, category, name, deadline, recurrence, createdAt',
+  khassidaLogs: '++id, khassidaId, readDate',
+  settings: 'key',
+  // Kamils avec suivi quotidien (chaque jour un juzz)
+  dailyKamils: '++id, startDate, endDate, name, createdAt',
+  // Logs quotidiens pour dailyKamils
+  dailyKamilLogs: '++id, dailyKamilId, date',
+  // Listes de Khassidas pour une période
+  khassidaBatches: '++id, periodName, startDate, endDate, createdAt',
+})
+
+// --- Helpers Kamil Daily ---
+
+export async function createDailyKamil(data) {
+  return db.dailyKamils.add({ ...data, createdAt: new Date().toISOString() })
+}
+
+export async function updateDailyKamil(id, data) {
+  return db.dailyKamils.update(id, data)
+}
+
+export async function deleteDailyKamil(id) {
+  await db.dailyKamilLogs.where('dailyKamilId').equals(id).delete()
+  return db.dailyKamils.delete(id)
+}
+
+export async function logDailyKamilReading(dailyKamilId, juzz, notes = '', date = null) {
+  const logDate = date || new Date().toISOString().split('T')[0]
+  // Vérifier si existe déjà pour ce jour
+  const existing = await db.dailyKamilLogs
+    .where('dailyKamilId').equals(dailyKamilId)
+    .filter(l => l.date === logDate)
+    .first()
+
+  if (existing) {
+    return db.dailyKamilLogs.update(existing.id, { juzz, notes, loggedAt: new Date().toISOString() })
+  } else {
+    return db.dailyKamilLogs.add({ dailyKamilId, date: logDate, juzz, notes, loggedAt: new Date().toISOString() })
+  }
+}
+
+export async function getDailyKamilLogs(dailyKamilId) {
+  return db.dailyKamilLogs.where('dailyKamilId').equals(dailyKamilId).toArray()
+}
+
+// --- Helpers Khassida Batch ---
+
+export async function createKhassidaBatch(data) {
+  return db.khassidaBatches.add({ ...data, createdAt: new Date().toISOString() })
+}
+
+export async function updateKhassidaBatch(id, data) {
+  return db.khassidaBatches.update(id, data)
+}
+
+export async function deleteKhassidaBatch(id) {
+  return db.khassidaBatches.delete(id)
+}
+
 // --- Helpers Kamil ---
 
 export async function createKamil(data) {

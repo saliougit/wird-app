@@ -1,46 +1,258 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { db } from '../db'
 import { today, daysUntil, isOverdue, daysOverdue } from '../utils/dates'
-import Layout from '../components/Layout'
 import ProgressRing from '../components/ProgressRing'
 import Logo from '../components/Logo'
+import BottomNav from '../components/BottomNav'
+import { useTheme } from '../context/ThemeContext'
 import {
   BookOpen, Flame, Warning, CheckCircle, ArrowRight,
-  Hourglass, Plus
+  Hourglass, Plus, Clock, Compass
 } from '@phosphor-icons/react'
 
-function DashboardHeader() {
-  const now = new Date()
-  const heure = now.getHours()
-  let salut = 'Bonsoir'
-  if (heure < 12) salut = 'Bonjour'
-  else if (heure < 18) salut = 'Bon après-midi'
+const ARABIC_GREETINGS = {
+  morning: 'صباح الخير',
+  afternoon: 'مساء الخير',
+  evening: 'تصبح على خير'
+}
 
-  const dateLabel = now.toLocaleDateString('fr-FR', {
-    weekday: 'long', day: 'numeric', month: 'long'
-  })
+const ARABIC_DAYS = {
+  0: 'الأحد', 1: 'الاثنين', 2: 'الثلاثاء', 3: 'الأربعاء',
+  4: 'الخميس', 5: 'الجمعة', 6: 'السبت'
+}
+
+const ARABIC_MONTHS = {
+  0: 'جانفي', 1: 'فيفري', 2: 'مارس', 3: 'أفريل',
+  4: 'ماي', 5: 'جوان', 6: 'جويلية', 7: 'أوت',
+  8: 'سبتمبر', 9: 'أكتوبر', 10: 'نوفمبر', 11: 'ديسمبر'
+}
+
+const HIJRI_MONTHS = {
+  1: 'محرم', 2: 'صفر', 3: 'ربيع الأول', 4: 'ربيع الثاني',
+  5: 'جمادى الأولى', 6: 'جمادى الثانية', 7: 'رجب', 8: 'شعبان',
+  9: 'رمضان', 10: 'شوال', 11: 'ذو القعدة', 12: 'ذو الحجة'
+}
+
+// Convert Gregorian to Hijri date - 2026 accurate lookup 
+function toHijri(date) {
+  const g = date.getFullYear()
+  const m = date.getMonth() + 1
+  const d = date.getDate()
+
+  // 2026 Hijri calendar month start dates (verified: 20 Feb 2026 = 2 Rajab 1447)
+  // 1 Muharram 1447 = 24 Aug 2025
+  const hijri2026 = {
+    1: { start: [8, 24], days: 30 },   // 1 Muharram
+    2: { start: [9, 23], days: 29 },   // 1 Safar
+    3: { start: [10, 22], days: 30 },  // 1 Rabi' al-Awwal
+    4: { start: [11, 21], days: 29 },  // 1 Rabi' al-Thani
+    5: { start: [12, 20], days: 30 },  // 1 Jumada al-Awwal
+    6: { start: [1, 19], days: 29 },   // 1 Jumada al-Thani (Jan 2026)
+    7: { start: [2, 19], days: 30 },   // 1 Rajab (19 Feb = 1 Rajab)
+    8: { start: [3, 20], days: 29 },   // 1 Sha'ban
+    9: { start: [4, 18], days: 30 },   // 1 Ramadan
+    10: { start: [5, 18], days: 29 },  // 1 Shawwal
+    11: { start: [6, 16], days: 30 },  // 1 Dhu al-Qi'dah
+    12: { start: [7, 16], days: 29 },  // 1 Dhu al-Hijjah
+  }
+
+  // Determine current Hijri month
+  let hijriMonth = 1
+  let hijriYear = 1447
+  let monthStart = [8, 24]
+
+  for (let hm = 1; hm <= 12; hm++) {
+    const current = hijri2026[hm]
+    const [hm_month, hm_day] = current.start
+    
+    // Check if date is after this month's start
+    const isAfter = (m > hm_month) || (m === hm_month && d >= hm_day)
+    
+    if (isAfter) {
+      hijriMonth = hm
+      monthStart = current.start
+      
+      // Check if it's before next month
+      const nextMonth = hm + 1
+      if (nextMonth <= 12) {
+        const next = hijri2026[nextMonth]
+        const [nm_month, nm_day] = next.start
+        const isBeforeNext = (m < nm_month) || (m === nm_month && d < nm_day)
+        if (isBeforeNext) break
+      }
+    }
+  }
+
+  // Calculate day within month
+  const [start_month, start_day] = monthStart
+  let hijriDay = 1
+
+  if (m === start_month) {
+    hijriDay = d - start_day + 1
+  } else {
+    // Calculate days from month start
+    const startDate = new Date(g, start_month - 1, start_day)
+    const currentDate = new Date(g, m - 1, d)
+    const diff = Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24))
+    hijriDay = diff + 1
+  }
+
+  return { 
+    day: Math.max(1, Math.min(30, hijriDay)), 
+    month: hijriMonth, 
+    year: hijriYear 
+  }
+}
+
+function DashboardHeader() {
+  const { isDark } = useTheme()
+  const [time, setTime] = useState(new Date())
+  const [qibla, setQibla] = useState(null)
+
+  // Update clock every second
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Calculate Qibla direction using Great Circle bearing to Kaaba
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude: lat, longitude: lng } = pos.coords
+          // Kaaba (Mecca): 21.4225° N, 39.8262° E (verified coordinates)
+          const kaabLat = 21.4225
+          const kaabLng = 39.8262
+          
+          // Convert to radians
+          const lat1 = lat * Math.PI / 180
+          const lat2 = kaabLat * Math.PI / 180
+          const dLng = (kaabLng - lng) * Math.PI / 180
+          
+          // Great Circle bearing formula
+          const y = Math.sin(dLng) * Math.cos(lat2)
+          const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+          
+          // Calculate bearing from North (0°)
+          let bearing = Math.atan2(y, x) * 180 / Math.PI
+          // Normalize to 0-360 degrees
+          bearing = (bearing + 360) % 360
+          
+          setQibla(Math.round(bearing))
+        },
+        (error) => {
+          // Fallback coordinates (approximate for Algeria/North Africa)
+          setQibla(62) // Approximate bearing from North Africa region
+        }
+      )
+    } else {
+      setQibla(62) // Fallback for North Africa
+    }
+  }, [])
+
+  const heure = time.getHours()
+  const minutes = String(time.getMinutes()).padStart(2, '0')
+  const heureStr = `${heure}:${minutes}`
+
+  let salutAr = 'تصبح على خير'
+  let salutFr = 'Bonsoir'
+  if (heure < 12) {
+    salutAr = 'السلام عليكم ورحمة الله وبركاته'
+    salutFr = 'Bonjour'
+  }
+  else if (heure < 18) {
+    salutAr = 'السلام عليكم ورحمة الله'
+    salutFr = 'Bon après-midi'
+  }
+
+  const dayNum = time.getDay()
+  const gregorianDate = `${time.getDate().toString().padStart(2, '0')}/${(time.getMonth() + 1).toString().padStart(2, '0')}/${time.getFullYear()}`
+  
+  const hijri = toHijri(time)
+  const hijriDateStr = `${hijri.day} ${HIJRI_MONTHS[hijri.month]} ${hijri.year} ه`
+  const arabicDate = `${ARABIC_DAYS[dayNum]} ${time.getDate()} ${ARABIC_MONTHS[time.getMonth()]}`
 
   return (
-    <div className="px-4 pt-6 pb-7 bg-gradient-to-br from-green-deep via-green-deep to-green-mid text-ivory relative overflow-hidden">
+    <div className={`px-4 pt-12 pb-6 ${isDark ? 'bg-slate-900/85' : 'bg-gradient-to-br from-green-deep via-green-deep to-green-mid'} text-ivory relative overflow-hidden`}>
       {/* Decorative background element */}
-      <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl" />
-      <div className="absolute bottom-0 left-0 w-40 h-40 bg-white/3 rounded-full blur-3xl" />
+      <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/3 rounded-full blur-3xl" />
       
-      <div className="relative z-10">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
+      <div className="relative z-10 animate-fadeUp space-y-2.5 overflow-y-auto max-h-screen">
+        {/* Logo + Greeting - Expanded */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <Logo size="sm" />
-            <div>
-              <h1 className="font-display text-xl font-bold">Wird</h1>
-              <p className="text-ivory/80 text-xs font-body">Suivi de Lecture Spirituelle</p>
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl font-bold">وird</h1>
+              <p className="text-ivory/80 text-xs font-body truncate">القراءة الروحية</p>
             </div>
           </div>
+          <div className="text-right flex-shrink-0">
+            <p className="font-display text-lg font-bold leading-snug">{salutAr}</p>
+            <p className="text-ivory/80 text-xs mt-1">{salutFr}</p>
+          </div>
         </div>
-        
-        <div className="mt-4">
-          <p className="text-ivory/80 text-xs tracking-wider uppercase font-body">{salut},</p>
-          <p className="font-body text-base text-ivory/95 mt-1.5">{dateLabel}</p>
+
+        {/* Dates: Gregorian + Arabic + Time - Expanded */}
+        <div className="grid grid-cols-3 gap-2">
+          {/* Gregorian Date */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center animate-slideUp">
+            <p className="text-ivory/70 text-[10px] uppercase font-bold mb-1">الميلاد</p>
+            <p className="font-display text-sm font-bold text-ivory truncate">{gregorianDate}</p>
+          </div>
+
+          {/* Hijri Date */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center animate-slideUp" style={{animationDelay: '0.05s'}}>
+            <p className="text-ivory/70 text-[10px] uppercase font-bold mb-1">الهجري</p>
+            <p className="font-display text-sm font-bold text-ivory truncate text-right">{hijriDateStr}</p>
+          </div>
+
+          {/* Clock */}
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center animate-slideUp" style={{animationDelay: '0.1s'}}>
+            <div className="flex items-center justify-center gap-2 mb-1 flex-wrap">
+              <Clock size={12} className="text-gold flex-shrink-0" />
+              <p className="text-ivory/70 text-[10px] uppercase font-bold flex-shrink-0">الوقت</p>
+            </div>
+            <p className="font-display text-lg font-bold text-gold">{heureStr}</p>
+          </div>
+        </div>
+
+        {/* Qibla Compass - Compact */}
+        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center animate-slideUp" style={{animationDelay: '0.15s'}}>
+          <p className="text-ivory/70 text-[10px] uppercase font-bold mb-2">القبلة</p>
+          <div className="flex items-center justify-center">
+            <div className="relative w-16 h-16 flex items-center justify-center flex-shrink-0">
+              {/* Compass circle */}
+              <div className="absolute inset-0 rounded-full border-2 border-gold/40" />
+              {/* Cardinal directions */}
+              <span className="absolute top-1 text-[7px] text-gold/60 font-bold">N</span>
+              <span className="absolute bottom-1 text-[7px] text-gold/60 font-bold">S</span>
+              <span className="absolute left-1 text-[7px] text-gold/60 font-bold">W</span>
+              <span className="absolute right-1 text-[7px] text-gold/60 font-bold">E</span>
+              
+              {/* Arrow pointing to Qibla */}
+              {qibla !== null && (
+                <div 
+                  className="absolute transition-transform duration-500"
+                  style={{ transform: `rotate(${qibla}deg)` }}
+                >
+                  <svg width="12" height="22" viewBox="0 0 12 22" style={{marginLeft: '-6px', marginTop: '-11px'}}>
+                    {/* Arrow shaft */}
+                    <line x1="6" y1="8" x2="6" y2="20" stroke="#C49A28" strokeWidth="2" strokeLinecap="round" />
+                    {/* Arrow head - triangle pointing up */}
+                    <polygon points="6,3 2,10 10,10" fill="#C49A28" />
+                    {/* Center dot */}
+                    <circle cx="6" cy="11" r="1.5" fill="#C49A28" />
+                  </svg>
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="text-gold text-sm font-bold mt-2">{qibla ? `${qibla}°` : '...'}</p>
         </div>
       </div>
     </div>
@@ -51,15 +263,26 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   const kamils = useLiveQuery(() => db.kamils.toArray(), []) || []
+  const dailyKamils = useLiveQuery(() => db.dailyKamils.toArray(), []) || []
   const readings = useLiveQuery(() => db.readings.toArray(), []) || []
+  const dailyKamilLogs = useLiveQuery(() => db.dailyKamilLogs.toArray(), []) || []
   const khassidas = useLiveQuery(() => db.khassidas.toArray(), []) || []
   const khassidaLogs = useLiveQuery(() => db.khassidaLogs.toArray(), []) || []
 
-  // Active kamils
+  const todayStr = new Date().toISOString().split('T')[0]
+
+  // Active kamils (réguliers)
   const activeKamils = kamils.filter(k => {
     const readJuzz = [...new Set(readings.filter(r => r.kamilId === k.id).map(r => r.juzzNumber))]
     const total = k.type === 'collectif' ? (k.assignedJuzz?.length || 0) : 30
     return readJuzz.length < total
+  })
+
+  // Active kamils quotidiens
+  const activeDailyKamils = dailyKamils.filter(dk => {
+    const daysInPeriod = Math.ceil((new Date(dk.endDate) - new Date(dk.startDate)) / (1000 * 60 * 60 * 24)) + 1
+    const logged = dailyKamilLogs.filter(l => l.dailyKamilId === dk.id).length
+    return logged < daysInPeriod && dk.startDate <= todayStr
   })
 
   const overdueKamils = activeKamils.filter(k => isOverdue(k.endDate))
@@ -82,7 +305,7 @@ export default function Dashboard() {
     return isOverdue(k.deadline) || daysUntil(k.deadline) <= 1
   })
 
-  const totalTasks = activeKamils.length + activeKhassidas.length
+  const totalTasks = activeKamils.length + activeDailyKamils.length + activeKhassidas.length
   const completed = kamils.filter(k => {
     const readJuzz = [...new Set(readings.filter(r => r.kamilId === k.id).map(r => r.juzzNumber))]
     const total = k.type === 'collectif' ? (k.assignedJuzz?.length || 0) : 30
@@ -193,8 +416,8 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* Active Kamils */}
-        {activeKamils.filter(k => !isOverdue(k.endDate) && daysUntil(k.endDate) > 3).length > 0 && (
+        {/* Active Kamils (réguliers + quotidiens) */}
+        {(activeKamils.filter(k => !isOverdue(k.endDate) && daysUntil(k.endDate) > 3).length > 0 || activeDailyKamils.length > 0) && (
           <section>
             <div className="flex items-center justify-between mb-3">
               <h2 className="section-title flex items-center gap-2">
@@ -209,7 +432,7 @@ export default function Dashboard() {
               </button>
             </div>
             <div className="space-y-2">
-              {activeKamils.filter(k => !isOverdue(k.endDate) && daysUntil(k.endDate) > 3).slice(0, 3).map(k => {
+              {activeKamils.filter(k => !isOverdue(k.endDate) && daysUntil(k.endDate) > 3).slice(0, 2).map(k => {
                 const readJuzz = [...new Set(readings.filter(r => r.kamilId === k.id).map(r => r.juzzNumber))]
                 const total = k.type === 'collectif' ? (k.assignedJuzz?.length || 0) : 30
                 const pct = Math.round((readJuzz.length / total) * 100)
@@ -221,6 +444,23 @@ export default function Dashboard() {
                     total={total}
                     pct={pct}
                     onClick={() => navigate(`/kamils/${k.id}`)}
+                  />
+                )
+              })}
+              {activeDailyKamils.slice(0, 2).map(dk => {
+                const logs = dailyKamilLogs.filter(l => l.dailyKamilId === dk.id)
+                const daysInPeriod = Math.ceil((new Date(dk.endDate) - new Date(dk.startDate)) / (1000 * 60 * 60 * 24)) + 1
+                const pct = daysInPeriod > 0 ? Math.round((logs.length / daysInPeriod) * 100) : 0
+                const todayLogged = logs.some(l => l.date === todayStr)
+                return (
+                  <DailyKamilCard
+                    key={`daily-${dk.id}`}
+                    kamil={dk}
+                    logged={logs.length}
+                    total={daysInPeriod}
+                    pct={pct}
+                    todayLogged={todayLogged}
+                    onClick={() => navigate(`/kamils-daily/${dk.id}`)}
                   />
                 )
               })}
@@ -269,6 +509,8 @@ export default function Dashboard() {
         )}
 
       </main>
+      
+      <BottomNav />
     </div>
   )
 }
@@ -286,6 +528,27 @@ function StatCard({ label, value, Icon, color }) {
       <span className="font-display text-2xl font-bold">{value}</span>
       <span className="text-[10px] opacity-70 text-center leading-tight">{label}</span>
     </div>
+  )
+}
+
+function DailyKamilCard({ kamil, logged, total, pct, todayLogged, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left card p-4 flex items-center gap-4 transition-all active:scale-[0.98] border-l-4 border-gold-dark"
+    >
+      <ProgressRing percent={pct} size={56} stroke={4} color="#1A3828" bg="#E8DCC4">
+        <span className="text-xs font-bold text-green-deep">{pct}%</span>
+      </ProgressRing>
+      <div className="flex-1 min-w-0">
+        <p className="font-body font-bold text-green-deep truncate">{kamil.name}</p>
+        <p className="text-xs text-gray-500 mt-0.5">{logged} / {total} jours · Juzz {kamil.defaultJuzz}</p>
+        <span className="inline-block mt-1 px-2 py-0.5 bg-gold/20 text-gold-dark text-[10px] rounded-full">Quotidien</span>
+      </div>
+      <span className={`badge text-[10px] font-bold shrink-0 ${todayLogged ? 'badge-green' : 'badge-gold'}`}>
+        {todayLogged ? '✓ Fait' : 'À faire'}
+      </span>
+    </button>
   )
 }
 

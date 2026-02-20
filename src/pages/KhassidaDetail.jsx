@@ -56,6 +56,13 @@ export default function KhassidaDetail() {
   const handleLog = async () => {
     const parts = parseInt(partsRead)
     if (!parts || parts < 1) return
+    
+    // Validation: ne pas dépasser targetTotal
+    if (item.targetTotal && totalRead + parts > item.targetTotal) {
+      alert(`❌ Limite dépassée!\n\nDéjà lu: ${totalRead}\nVous voulez ajouter: +${parts}\nLimite: ${item.targetTotal}\n\nMax possible: ${item.targetTotal - totalRead}`)
+      return
+    }
+    
     setSaving(true)
     try {
       await logKhassidaReading(itemId, parts, logNotes)
@@ -282,22 +289,35 @@ export default function KhassidaDetail() {
               className="input text-2xl text-center font-bold text-gold-dark rounded-xl border-2 border-gold-light focus:border-gold-dark"
               type="number"
               min="1"
+              max={remaining !== null ? remaining : undefined}
               value={partsRead}
-              onChange={e => setPartsRead(e.target.value)}
+              onChange={e => {
+                const val = parseInt(e.target.value)
+                // Ne pas autoriser plus que le remaining
+                if (remaining !== null && val > remaining) return
+                setPartsRead(e.target.value)
+              }}
               autoFocus
             />
             {remaining !== null && (
               <p className="text-xs text-gold-dark font-semibold mt-2 text-center bg-gold-pale rounded-lg py-2">
-                Il reste <strong>{remaining}</strong> partie{remaining !== 1 ? 's' : ''} à lire
+                ✓ Il reste <strong>{remaining}</strong> partie{remaining !== 1 ? 's' : ''} max
+              </p>
+            )}
+            {item.targetTotal && (
+              <p className="text-xs text-gray-500 font-normal mt-1 text-center">
+                Déjà lu: <strong>{totalRead}</strong> / Objectif: <strong>{item.targetTotal}</strong>
               </p>
             )}
           </div>
 
-          {/* Quick select buttons */}
+          {/* Quick select buttons - only show valid values */}
           <div>
             <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Raccourcis rapides</p>
             <div className="grid grid-cols-4 gap-2">
-              {[1, 2, 3, 5, 7, 10, 11, 15].map(n => (
+              {[1, 2, 3, 5, 7, 10, 11, 15]
+                .filter(n => !remaining || n <= remaining) // Filtrer par le remaining
+                .map(n => (
                 <button
                   key={n}
                   onClick={() => setPartsRead(String(n))}

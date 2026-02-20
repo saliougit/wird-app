@@ -1,16 +1,33 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Green gradient background -->
+  <!-- Gradient background -->
   <defs>
     <linearGradient id="grad512" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#1A3828;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#2E5D48;stop-opacity:1" />
     </linearGradient>
+    <radialGradient id="glow512" cx="50%" cy="50%">
+      <stop offset="0%" style="stop-color:#C49A28;stop-opacity:0.4" />
+      <stop offset="100%" style="stop-color:#C49A28;stop-opacity:0" />
+    </radialGradient>
   </defs>
+  
+  <!-- Round background -->
   <rect width="512" height="512" rx="120" fill="url(#grad512)"/>
   
-  <!-- Gold circle -->
-  <circle cx="256" cy="256" r="200" fill="#C49A28" opacity="0.9"/>
+  <!-- Glow effect -->
+  <circle cx="256" cy="256" r="220" fill="url(#glow512)"/>
   
-  <!-- Arabic Waw (و) -->
-  <text x="256" y="340" font-family="Amiri, Georgia, serif" font-size="240" font-weight="bold" fill="#F5EDD6" text-anchor="middle" dominant-baseline="middle">و</text>
+  <!-- Inner circle border -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#C49A28" stroke-width="4" opacity="0.6"/>
+  
+  <!-- Wird text in Arabic - وird -->
+  <text x="256" y="300" font-family="Amiri, Georgia, serif" font-size="200" font-weight="bold" fill="#C49A28" text-anchor="middle" dominant-baseline="middle">وird</text>
+  
+  <!-- Decorative ornament top -->
+  <circle cx="150" cy="150" r="15" fill="#C49A28" opacity="0.5"/>
+  <circle cx="362" cy="150" r="15" fill="#C49A28" opacity="0.5"/>
+  
+  <!-- Decorative ornament bottom -->
+  <circle cx="150" cy="362" r="15" fill="#C49A28" opacity="0.3"/>
+  <circle cx="362" cy="362" r="15" fill="#C49A28" opacity="0.3"/>
 </svg>

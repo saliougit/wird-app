@@ -3,6 +3,21 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-green-deep: #1A3828;
+    --color-green-mid: #2D5A3D;
+    --color-gold: #C49A28;
+    --color-ivory: #F5EDD6;
+  }
+
+  .dark {
+    --color-green-deep: #0F1F1A;
+    --color-green-mid: #1A3A2E;
+    --color-gold: #D4AF37;
+    --color-ivory: #1C2722;
+    color-scheme: dark;
+  }
+
   * {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
@@ -14,8 +29,7 @@
 
   body {
     font-family: 'Lato', system-ui, sans-serif;
-    background: linear-gradient(135deg, #F5EDD6 0%, #FAFAF5 100%);
-    color: #1C1C1C;
+    @apply bg-ivory dark:bg-slate-900 text-gray-900 dark:text-gray-100 transition-colors duration-300;
     min-height: 100vh;
     min-height: 100dvh;
     overscroll-behavior: none;

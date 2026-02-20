@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -26,6 +27,7 @@ export default {
       fontFamily: {
         display: ['"Amiri"', 'Georgia', 'serif'],
         body: ['"Lato"', 'system-ui', 'sans-serif'],
+        arabic: ['"Amiri"', 'Georgia', 'serif'],
       },
     },
   },
